@@ -13,8 +13,9 @@
 # Character Images
 # 	A character's appearance is described, multiple images are generated with that description with different emotions / states (e.g. talking).
 #  The current image/state is fed to the LLM and it's able to call a tool/function to change to a new image, which swaps out the image that Vuo renders on-screen.
+# 	Upon thinking further, I think I like the idea of just getting JSON back from the LLM which includes the dialogue + chosen image, without extra tool step(s)
 # At some kind of interval and/or activity, send the current chunk of transcript to the LLM to get a response
-# 	-> Generate & Play TTS
+# 	-> Generate & Play TTS, write LLM response to display on-screen (eventually transcribe TTS audio)
 
 # I think we'll probably write the character's (spoken) response to display as well as the user's, at least for debug purposes.
 
