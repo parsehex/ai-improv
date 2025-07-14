@@ -1,0 +1,4 @@
+LANGUAGE_MODEL = '/path/to/model.gguf'
+IMAGE_MODEL = '/path/to/model.safetensors'
+TTS_MODEL = 'prince-canuma/Kokoro-82M'
+WHISPER_MODEL = 'medium.en'  # use small.en on macbook
