@@ -6,6 +6,7 @@ import time
 LLM_INPUT_FILE = "./data/llm_input.txt"
 LLM_OUTPUT_FILE = "./data/llm_output.txt"
 CURRENT_IMAGE_PATH = "./data/current_character_image.png"
+APP_STATE_FILE = "./data/app_state.txt"
 
 # --- Display Configuration ---
 WINDOW_WIDTH = 800
@@ -41,6 +42,7 @@ class Display:
 		self.ai_text = ""
 		self.character_image = None
 		self.running = False
+		self.app_state = "Idle"
 
 		# --- File Watching ---
 		# Store last modification times to avoid reloading unchanged files
@@ -99,6 +101,10 @@ class Display:
 
 	def update_state(self):
 		"""Polls files for changes and updates the display state."""
+		new_app_state = self._read_file_if_changed(APP_STATE_FILE)
+		if new_app_state is not None:
+			self.app_state = new_app_state.strip()
+
 		# Update text
 		new_user_text = self._read_file_if_changed(LLM_INPUT_FILE)
 		if new_user_text is not None:
@@ -116,6 +122,15 @@ class Display:
 	def draw(self):
 		"""Renders the current state to the screen."""
 		self.screen.fill(BACKGROUND_COLOR)
+
+		if self.app_state == "Offline":
+			offline_font = pygame.font.Font(None, 60)
+			offline_surf = offline_font.render("System Offline", True, (200, 50, 50))
+			offline_rect = offline_surf.get_rect(center=(WINDOW_WIDTH // 2,
+			                                             WINDOW_HEIGHT // 2))
+			self.screen.blit(offline_surf, offline_rect)
+			pygame.display.flip()
+			return  # Don't draw anything else
 
 		# --- Draw Character Image ---
 		if self.character_image:

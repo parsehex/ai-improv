@@ -42,6 +42,10 @@ To use this:
 - In Terminal 2, run `python main_display.py`
 - The remote is available at <http://localhost:8000>
 
+## `run_app.py`
+
+A wrapper script to run `main_web.py` and `main_display.py` together, allowing for restarting `main_web` while keeping the pygame window open.
+
 ## `story_app/`
 
 This is a separate demo which I haven't kept working on.
