@@ -17,13 +17,13 @@ import numpy as np
 # --- Project Imports ---
 import lib.llm as llm
 import lib.stt as stt
-# import lib.tts as tts # For later
+import lib.tts as tts
 
 # --- Configuration ---
 # File paths for Vuo to read from
 LLM_INPUT_FILE = "./data/llm_input.txt"
 LLM_OUTPUT_FILE = "./data/llm_output.txt"
-CHARACTER_STATE_FILE = "./data/character_state.txt"
+APP_STATE_FILE = "./data/app_state.txt"
 RECORDED_AUDIO_FILE = "./data/audio.wav"
 
 # Hotkey for push-to-talk
@@ -69,7 +69,7 @@ def update_character_state(new_state: str):
 	with state.lock:
 		state.current_state = new_state
 	print(f"[State Change] => {new_state}")
-	write_file(CHARACTER_STATE_FILE, new_state)
+	write_file(APP_STATE_FILE, new_state)
 
 
 # --- Audio Recording ---
@@ -166,11 +166,29 @@ def process_interaction(audio_path: str):
 	print(f"[AI] {llm_response}")
 	write_file(LLM_OUTPUT_FILE, llm_response)
 
-	# 3. TTS Playback (Placeholder)
+	# 3. TTS Generation and Playback
 	update_character_state("Talking")
-	print("(TTS playback would happen here)")
-	# TODO: Replace this sleep with your actual TTS playback function.
-	time.sleep(3)  # Placeholder for TTS playback duration
+	tts_audio_path = "./data/output.wav"
+
+	try:
+		tts.generate(llm_response, output_path=tts_audio_path)
+		print(f"TTS audio saved to {tts_audio_path}")
+	except Exception as e:
+		print(f"Error generating TTS: {e}")
+		update_character_state("Idle")
+		return
+
+	# Playback
+	try:
+		import soundfile as sf
+		import sounddevice as sd
+
+		data, samplerate = sf.read(tts_audio_path, dtype='float32')
+		sd.play(data, samplerate)
+		sd.wait()  # Wait until playback is done
+		print("Playback complete.")
+	except Exception as e:
+		print(f"Error playing audio: {e}")
 
 	# 4. Cleanup and Reset
 	update_character_state("Idle")
@@ -218,6 +236,7 @@ def main():
 	# Initialize components (can take a moment)
 	llm.init()
 	stt.init()
+	tts.init()
 	print("LLM and STT models initialized.")
 
 	# Clear/initialize Vuo files on startup
@@ -250,9 +269,18 @@ def main():
 
 		llm.unload()
 		stt.unload()
+		tts.unload()
+		write_file(LLM_INPUT_FILE, "")
+		write_file(LLM_OUTPUT_FILE, "")
 		update_character_state("Offline")
 		print("Application stopped.")
 
 
 if __name__ == "__main__":
 	main()
+
+# idea for improvement / alternate control:
+# 	spawn a web + websocket server and a single page which allows for controlling the recording
+# 	this way a phone could be used as a remote
+# 	now that i think about it, this could have other controls too e.g.:
+# 		clear chat state

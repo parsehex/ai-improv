@@ -29,7 +29,7 @@ def generate(text: str, output_path='audio.wav'):
 
 	for _, _, audio in pipeline(text,
 	                            voice='af_heart',
-	                            speed=1,
+	                            speed=1.2,
 	                            split_pattern=r'\n+'):
 		assert audio is not None
 		sf.write(output_path, audio[0], 24000)

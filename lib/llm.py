@@ -36,7 +36,7 @@ def generate(input: str):
 	            'content': input
 	        }
 	    ],
-	    max_tokens=32,
+	    max_tokens=128,
 	    stop=["Q:", "\n"],
 	    stream=False)
 	assert isinstance(output, ChatCompletion)
