@@ -8,10 +8,18 @@ model: Module
 pipeline: KokoroPipeline
 
 
-def init():
+def init(model_path=cfg.TTS_MODEL):
 	global model, pipeline
-	model = load_model(cfg.TTS_MODEL)
+	model = load_model(model_path)
 	pipeline = KokoroPipeline(lang_code='a', model=model, repo_id=cfg.TTS_MODEL)
+
+
+def unload():
+	global model, pipeline
+	if not model:
+		return
+	del pipeline
+	del model
 
 
 def generate(text: str, output_path='audio.wav'):
