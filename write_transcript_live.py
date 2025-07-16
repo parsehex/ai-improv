@@ -1,65 +1,61 @@
 from whisper_live.client import TranscriptionClient
-from collections import deque
 import threading
 import time
-
-lock = threading.Lock()
-
-output_file = "./data/live_transcript_output.txt"
-start_time = time.time()
+import config as cfg
 
 
-def render_transcript_snippet(text: str,
-                              segments: list,
-                              last_type='sec',
-                              last_n=30,
-                              completed_only=True):
-	# last_type:
-	# 	'line': show last N lines/segments in file
-	# 	'sec': show segments from last N seconds
-	file_content = ''
+# Default callback for standalone execution
+def _default_render_callback(text: str, segments: list):
+	output_file = "./data/live_transcript_output.txt"
+	lock = threading.Lock()
 
-	subset = segments
-	if last_type == 'line':  # pick last N segments
-		subset = segments[-last_n:]
-
-	now = time.time()
-	cur_runtime = now - start_time
-	for segment in subset:
-		text = segment.get('text', '').strip()
-		if not text:
-			continue
-
-		is_complete = segment.get('completed')
-		if completed_only and not is_complete:  # skip if incomplete
-			continue
-
-		if last_type == 'sec':  # pick last N seconds
-			end = float(segment.get('end', '').strip())
-			since_end = cur_runtime - end
-			if since_end > last_n:
-				continue
-
-		file_content += text + '\n'
+	# Simple logic to display last 5 completed lines
+	completed_segments = [
+	    s['text'].strip() for s in segments if s.get('completed')
+	]
+	last_n_segments = completed_segments[-5:]
+	file_content = '\n'.join(last_n_segments)
 
 	with lock:
 		with open(output_file, 'w', encoding='utf-8') as f:
 			f.write(file_content)
 
 
-client = TranscriptionClient(
-    "192.168.0.217",
-    9090,
-    translate=False,
-    model="medium.en",
-    use_vad=True,
-    # save_output_recording=True,
-    # output_recording_filename="./output_recording.wav",
-    max_clients=4,
-    clip_audio=True,
-    max_connection_time=9999,  # Can't set to infinity or similar
-    transcription_callback=render_transcript_snippet,
-    # log_transcription=False, # callback isn't called when False
-    mute_audio_playback=False,
-)
-client()
+def start_transcription(callback=_default_render_callback):
+	"""
+    Initializes and starts the TranscriptionClient in a background thread.
+
+    Args:
+        callback: A function that handles the transcription output.
+                  It receives `text` (str) and `segments` (list).
+    """
+	client = TranscriptionClient(
+	    cfg.WHISPER_SERVER_IP,
+	    cfg.WHISPER_SERVER_PORT,
+	    translate=False,
+	    model=cfg.WHISPER_MODEL,
+	    use_vad=True,
+	    max_clients=4,
+	    clip_audio=True,
+	    max_connection_time=9999,
+	    transcription_callback=callback,
+	    mute_audio_playback=False,
+	)
+
+	# The client's __call__ method is blocking, so run it in a thread
+	client_thread = threading.Thread(target=client, daemon=True)
+	client_thread.start()
+	print("Transcription client started in the background.")
+
+
+if __name__ == "__main__":
+	print("Running live transcript writer in standalone mode.")
+	print(f"Writing rolling transcript to ./data/live_transcript_output.txt")
+	start_transcription()
+
+	# Keep the main thread alive to let the background thread run
+	try:
+		while True:
+			time.sleep(1)
+	except KeyboardInterrupt:
+		print("\nStopping.")
