@@ -4,10 +4,34 @@ from typing import Any
 import config as cfg
 import os, time
 import mlx.core as mx
-from mlx_audio.stt.utils import load_model
+from mlx_audio.stt.utils import get_model_and_args
 from mlx_audio.stt.generate import save_as_json, save_as_srt, save_as_txt, save_as_vtt
 
 model: Any
+
+
+def load_model(model_path: str,
+               lazy: bool = False,
+               strict: bool = True,
+               **kwargs):
+	model_name = None
+	model_type = 'whisper'
+	if isinstance(model_path, str):
+		model_name = model_path.lower().split("/")[-1].split("-")
+	elif isinstance(model_path, Path):
+		index = model_path.parts.index("hub")
+		model_name = model_path.parts[index + 1].lower().split("--")[-1].split("-")
+	else:
+		raise ValueError(f"Invalid model path type: {type(model_path)}")
+
+	model_class, model_type = get_model_and_args(model_type=model_type,
+	                                             model_name=model_name)
+	model = model_class.Model.from_pretrained(model_path)
+
+	if not lazy:
+		model.eval()
+
+	return model
 
 
 def init(model_path: str = cfg.WHISPER_MODEL):

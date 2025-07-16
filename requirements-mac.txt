@@ -157,6 +157,7 @@ pyee==13.0.0
 Pygments==2.19.2
 pylibsrtp==0.12.0
 pyloudnorm==0.1.1
+pynput==1.8.1
 pyobjc==11.1
 pyobjc-core==11.1
 pyobjc-framework-Accessibility==11.1
