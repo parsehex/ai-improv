@@ -18,7 +18,7 @@
 				margin: 0;
 				background-color: #1c1c1e;
 				color: #f2f2f7;
-				touch-action: manipulation; /* Prevents double-tap to zoom on mobile */
+				touch-action: manipulation;
 			}
 			.container {
 				text-align: center;
@@ -62,17 +62,43 @@
 				color: white;
 				cursor: not-allowed;
 			}
+			.controls {
+				margin-top: 2rem;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 0.5rem;
+			}
+			#character-select {
+				padding: 0.5rem;
+				border-radius: 8px;
+				background-color: #3a3a3c;
+				color: #f2f2f7;
+				border: 1px solid #545458;
+				font-size: 1rem;
+			}
+			#character-label {
+				font-size: 1rem;
+				color: #8e8e93;
+			}
 		</style>
 	</head>
 	<body>
 		<div class="container">
 			<div id="status">Connecting...</div>
 			<button id="ptt-button" disabled>Hold to Talk</button>
+
+			<div class="controls" id="character-controls" style="display: none">
+				<label id="character-label" for="character-select">Character</label>
+				<select id="character-select"></select>
+			</div>
 		</div>
 
 		<script>
 			const statusEl = document.getElementById('status');
 			const pttButton = document.getElementById('ptt-button');
+			const characterControlsEl = document.getElementById('character-controls');
+			const characterSelectEl = document.getElementById('character-select');
 
 			const host = window.location.host;
 			const ws = new WebSocket(`ws://${host}/ws`);
@@ -91,7 +117,7 @@
 					case 'thinking...':
 					case 'talking':
 						pttButton.classList.add('processing');
-						statusEl.textContent = 'Processing...'; // Consolidate processing states for UI
+						statusEl.textContent = 'Processing...';
 						pttButton.disabled = true;
 						break;
 					case 'idle':
@@ -102,9 +128,39 @@
 				}
 			}
 
+			function populateCharacterSelector(characterData) {
+				const { available, current } = characterData;
+
+				characterSelectEl.innerHTML = ''; // Clear existing options
+
+				const charKeys = Object.keys(available);
+				if (charKeys.length > 0) {
+					charKeys.forEach((charKey) => {
+						const option = document.createElement('option');
+						option.value = charKey;
+						option.textContent = available[charKey].name;
+						if (charKey === current) {
+							option.selected = true;
+						}
+						characterSelectEl.appendChild(option);
+					});
+					characterControlsEl.style.display = 'flex';
+				} else {
+					characterControlsEl.style.display = 'none';
+				}
+			}
+
 			ws.onopen = () => {
 				console.log('WebSocket connection established');
 				updateUI('Idle');
+				// Fetch initial character data once connected
+				fetch('/api/characters')
+					.then((response) => response.json())
+					.then((data) => {
+						console.log('Received character data:', data);
+						populateCharacterSelector(data);
+					})
+					.catch((error) => console.error('Error fetching characters:', error));
 			};
 
 			ws.onmessage = (event) => {
@@ -112,12 +168,16 @@
 				if (data.type === 'state_update') {
 					console.log('Received state update:', data.state);
 					updateUI(data.state);
+				} else if (data.type === 'character_update') {
+					console.log('Received character update:', data.character);
+					populateCharacterSelector(data.character);
 				}
 			};
 
 			ws.onclose = () => {
 				console.log('WebSocket connection closed');
 				updateUI('Offline');
+				characterControlsEl.style.display = 'none';
 			};
 
 			ws.onerror = (error) => {
@@ -125,28 +185,34 @@
 				updateUI('Error');
 			};
 
-			function sendAction(action) {
+			function sendAction(action, payload = {}) {
 				if (ws.readyState === WebSocket.OPEN) {
-					ws.send(JSON.stringify({ action: action }));
+					ws.send(JSON.stringify({ action, ...payload }));
 				}
 			}
 
-			// Use both mouse and touch events for broad compatibility
+			// PTT Listeners
 			pttButton.addEventListener('mousedown', () =>
 				sendAction('start_recording')
 			);
 			pttButton.addEventListener('mouseup', () => sendAction('stop_recording'));
 			pttButton.addEventListener('mouseleave', () =>
 				sendAction('stop_recording')
-			); // Stop if mouse leaves button
-
+			);
 			pttButton.addEventListener('touchstart', (e) => {
-				e.preventDefault(); // Prevent mouse events from firing
+				e.preventDefault();
 				sendAction('start_recording');
 			});
 			pttButton.addEventListener('touchend', () =>
 				sendAction('stop_recording')
 			);
+
+			// Character selection listener
+			characterSelectEl.addEventListener('change', (event) => {
+				const selectedCharacter = event.target.value;
+				console.log(`Requesting switch to character: ${selectedCharacter}`);
+				sendAction('switch_character', { character: selectedCharacter });
+			});
 		</script>
 	</body>
 </html>
