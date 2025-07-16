@@ -30,7 +30,7 @@ CURRENT_IMAGE_PATH = "./data/current_character_image.png"
 # Hotkey for push-to-talk
 # Using right option/alt key. You can change this.
 # See pynput docs for key names: https://pynput.readthedocs.io/en/latest/keyboard.html
-PUSH_TO_TALK_KEY = keyboard.Key.cmd_r
+PUSH_TO_TALK_KEY = keyboard.Key.alt_r
 
 # Audio recording settings
 SAMPLE_RATE = 16000  # Whisper models are trained on 16kHz audio
@@ -41,8 +41,8 @@ with open('./data/character_images/available_images.json') as f:
 
 sys_prompt = (
     "You are a helpful, expressive AI character named Luna. "
-    "You respond in JSON format with keys: 'text' (spoken output), and optional 'emotion'. "
-    "Valid emotions are: ['neutral', 'happy', 'thinking', 'talking', 'surprised', 'listening'].\n"
+    "Respond in JSON object format with keys: 'text' (spoken output), and optional 'emotion'. "
+    "Valid emotions are: ['neutral', 'happy', 'surprised'].\n"
     "Example response:\n"
     '{"text": "Hello! How can I help you today?", "emotion": "happy"}')
 
@@ -320,4 +320,5 @@ if __name__ == "__main__":
 # 	spawn a web + websocket server and a single page which allows for controlling the recording
 # 	this way a phone could be used as a remote
 # 	now that i think about it, this could have other controls too e.g.:
-# 		clear chat state
+# 		manage/clear chat state
+# 		set/change system prompt
