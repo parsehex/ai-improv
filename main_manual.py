@@ -1,9 +1,9 @@
-# main_manual.py
-
+import json
 import os
 import time
 import threading
 import queue
+import shutil
 
 # --- Dependencies for manual recording ---
 # You'll need to install these:
@@ -25,6 +25,7 @@ LLM_INPUT_FILE = "./data/llm_input.txt"
 LLM_OUTPUT_FILE = "./data/llm_output.txt"
 APP_STATE_FILE = "./data/app_state.txt"
 RECORDED_AUDIO_FILE = "./data/audio.wav"
+CURRENT_IMAGE_PATH = "./data/current_character_image.png"
 
 # Hotkey for push-to-talk
 # Using right option/alt key. You can change this.
@@ -35,6 +36,16 @@ PUSH_TO_TALK_KEY = keyboard.Key.cmd_r
 SAMPLE_RATE = 16000  # Whisper models are trained on 16kHz audio
 CHANNELS = 1
 
+with open('./data/character_images/available_images.json') as f:
+	image_map = json.load(f)
+
+sys_prompt = (
+    "You are a helpful, expressive AI character named Luna. "
+    "You respond in JSON format with keys: 'text' (spoken output), and optional 'emotion'. "
+    "Valid emotions are: ['neutral', 'happy', 'thinking', 'talking', 'surprised', 'listening'].\n"
+    "Example response:\n"
+    '{"text": "Hello! How can I help you today?", "emotion": "happy"}')
+
 
 # --- State Management ---
 # Using a class to hold state is cleaner than globals
@@ -43,6 +54,7 @@ class AppState:
 	def __init__(self):
 		self.lock = threading.Lock()
 		self.current_state = "Idle"  # Idle, Listening, Processing
+		self.current_emotion = "neutral"
 		self.is_recording = False
 		self.audio_frames = []
 		# A queue to process interactions sequentially
@@ -64,12 +76,29 @@ def write_file(filepath, content):
 		print(f"Error writing to file {filepath}: {e}")
 
 
+def update_image_for_state(state_override=None):
+	"""Updates character image based on app state or emotion."""
+	image_key = state_override if state_override else state.current_emotion
+	image_path = image_map.get(image_key)
+
+	if image_path:
+		shutil.copy(image_path, CURRENT_IMAGE_PATH)
+		print(f"Updated image to: {image_key}")
+	else:
+		print(f"No image found for state: {image_key}")
+
+
 def update_character_state(new_state: str):
-	"""Updates the state variable and the file for Vuo."""
 	with state.lock:
 		state.current_state = new_state
+
 	print(f"[State Change] => {new_state}")
 	write_file(APP_STATE_FILE, new_state)
+
+	if new_state in ["Listening", "Thinking", "Talking"]:
+		update_image_for_state(new_state.lower())
+	elif new_state == "Idle":
+		update_image_for_state()
 
 
 # --- Audio Recording ---
@@ -158,20 +187,28 @@ def process_interaction(audio_path: str):
 	# 2. Get LLM Response
 	update_character_state("Thinking...")
 	try:
-		llm_response = llm.generate(user_text)
+		raw_response = llm.generate(user_text, sys_input=sys_prompt, json=True)
+		parsed = json.loads(raw_response)
+		ai_text = parsed.get('text', '')
+		emotion = parsed.get('emotion', None)
 	except Exception as e:
-		print(f"Error generating LLM response: {e}")
-		llm_response = "I'm sorry, I had a problem thinking of a response."
+		print(f"Error parsing LLM response: {e}")
+		ai_text = "I'm sorry, something went wrong."
+		emotion = None
 
-	print(f"[AI] {llm_response}")
-	write_file(LLM_OUTPUT_FILE, llm_response)
+	# Update text files
+	write_file(LLM_OUTPUT_FILE, ai_text)
+
+	# Copy new image if applicable
+	if emotion and emotion in image_map:
+		state.current_emotion = emotion
 
 	# 3. TTS Generation and Playback
 	update_character_state("Talking")
 	tts_audio_path = "./data/output.wav"
 
 	try:
-		tts.generate(llm_response, output_path=tts_audio_path)
+		tts.generate(ai_text, output_path=tts_audio_path)
 		print(f"TTS audio saved to {tts_audio_path}")
 	except Exception as e:
 		print(f"Error generating TTS: {e}")
