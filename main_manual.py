@@ -315,10 +315,3 @@ def main():
 
 if __name__ == "__main__":
 	main()
-
-# idea for improvement / alternate control:
-# 	spawn a web + websocket server and a single page which allows for controlling the recording
-# 	this way a phone could be used as a remote
-# 	now that i think about it, this could have other controls too e.g.:
-# 		manage/clear chat state
-# 		set/change system prompt

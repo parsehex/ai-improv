@@ -7,6 +7,11 @@ import shutil
 import asyncio
 from typing import List, Dict, Any
 
+# TODO
+# - Manage chat state (e.g. clear all, editing messages)
+# - Manage (section of) system prompt
+# - Change character's TTS voice (+ update its config)
+
 # --- Web Server Imports ---
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
