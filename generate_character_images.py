@@ -1,45 +1,46 @@
-import os
 import json
+import os
 from stable_diffusion_cpp import StableDiffusion
 import config as cfg
 
-# --- Config ---
 CHARACTER_NAME = "Luna"
-BASE_PROMPT = "a futuristic digital assistant girl named Luna, anime style, portrait, looking at viewer"
-EMOTIONS = [
-    "neutral", "happy", "thinking", "talking", "surprised", "listening"
-]
-OUTPUT_DIR = "./data/character_images"
-IMAGE_MAP_FILE = "./data/character_images/available_images.json"
-
-
-def ensure_dir(path):
-	os.makedirs(path, exist_ok=True)
+BASE_PROMPT = f"a digital illustration of a friendly AI character named {CHARACTER_NAME}"
+OUTPUT_DIR = "./data/character_images/"
+EMOTIONS = {
+    "neutral": "with a calm expression",
+    "happy": "smiling warmly",
+    "thinking": "looking contemplative, hand on chin",
+    "talking": "speaking mid-sentence",
+    "surprised": "with wide eyes, slightly shocked",
+    "listening": "attentively listening, leaning forward"
+}
 
 
 def generate_images():
-	ensure_dir(OUTPUT_DIR)
+	os.makedirs(OUTPUT_DIR, exist_ok=True)
 	sd = StableDiffusion(model_path=cfg.IMAGE_MODEL, verbose=False)
 
-	image_map = {}
+	mapping = {}
+	charname = CHARACTER_NAME.lower()
+	for key, detail in EMOTIONS.items():
+		full_prompt = f"{BASE_PROMPT}, {key} expression, {detail}"
+		print(f"Generating: {key} => {full_prompt}")
 
-	for emotion in EMOTIONS:
-		prompt = f"{BASE_PROMPT}, {emotion} expression"
-		output = sd.txt_to_img(prompt=prompt,
+		images = sd.txt_to_img(prompt=full_prompt,
 		                       width=512,
 		                       height=512,
-		                       sample_steps=15)
+		                       sample_steps=25,
+		                       seed=-1)
 
-		filename = f"{CHARACTER_NAME.lower()}_{emotion}.png"
-		output_path = os.path.join(OUTPUT_DIR, filename)
-		output[0].save(output_path)
-		image_map[emotion] = output_path
-		print(f"Generated: {filename}")
+		filename = f"{charname}_{key}.png"
+		filepath = os.path.join(OUTPUT_DIR, filename)
+		images[0].save(filepath)
+		mapping[key] = filepath
 
-	# Save image map for app use
-	with open(IMAGE_MAP_FILE, 'w') as f:
-		json.dump(image_map, f, indent=2)
-	print(f"Image map saved to {IMAGE_MAP_FILE}")
+	with open(os.path.join(OUTPUT_DIR, "available_images.json"), "w") as f:
+		json.dump(mapping, f, indent=2)
+
+	print("Character images generated and mapping saved.")
 
 
 if __name__ == "__main__":
