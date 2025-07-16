@@ -23,22 +23,26 @@ def unload():
 	del model
 
 
-def generate(input: str):
+def generate(input: str, sys_input='', json=False):
 	global model
 	if not model:
 		init()
 
-	output = model.create_chat_completion_openai_v1(
-	    messages=[
-	        # {'role': 'system', 'content': 'The following is '}
-	        {
-	            'role': 'user',
-	            'content': input
-	        }
-	    ],
-	    max_tokens=128,
-	    stop=["Q:", "\n"],
-	    stream=False)
+	messages = [{'role': 'user', 'content': input}]
+	if sys_input:
+		msg = {'role': 'system', 'content': sys_input}
+		messages.insert(0, msg)
+
+	kwargs = {
+	    'messages': messages,
+	    'max_tokens': 128,
+	    'stop': ["Q:", "\n"],
+	    'stream': False
+	}
+	if json:
+		kwargs['response_format'] = {'type': 'json_object'}
+
+	output = model.create_chat_completion_openai_v1(**kwargs)
 	assert isinstance(output, ChatCompletion)
 
 	output_str = output.choices[0].message.content
