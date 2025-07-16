@@ -6,6 +6,7 @@ import queue
 import shutil
 import asyncio
 from typing import List, Dict, Any
+import io
 
 # TODO
 # - Manage chat state (e.g. clear all, editing messages)
@@ -15,7 +16,7 @@ from typing import List, Dict, Any
 # --- Web Server Imports ---
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 # --- Dependencies for manual recording ---
 from pynput import keyboard
@@ -27,6 +28,7 @@ import numpy as np
 import lib.llm as llm
 import lib.stt as stt
 import lib.tts as tts
+from lib.utils import get_local_ip
 
 # --- Configuration ---
 LLM_INPUT_FILE = "./data/llm_input.txt"
@@ -71,6 +73,7 @@ class AppState:
 		self.audio_frames = []
 		self.processing_queue = queue.Queue()
 		self.state_update_queue = asyncio.Queue()
+		self.qr_code_buffer: io.BytesIO | None = None
 
 		self.available_characters: Dict[str, Dict[str, Any]] = {}
 		self.current_character_name: str | None = None
@@ -400,8 +403,6 @@ async def state_updater():
 def startup_event():
 	print("Starting AI Improv (Web Remote Mode)...")
 	load_characters()
-	print(f"Hold the '{PUSH_TO_TALK_KEY}' key to record your voice.")
-	print("Or open http://127.0.0.1:8000 in your browser.")
 
 	llm.init()
 	stt.init()
@@ -415,6 +416,36 @@ def startup_event():
 	threading.Thread(target=processing_worker, daemon=True).start()
 	keyboard.Listener(on_press=on_press, on_release=on_release).start()
 	asyncio.create_task(state_updater())
+
+	# --- Server Info & QR Code ---
+	HOST = "0.0.0.0"
+	PORT = 8000
+	local_ip = get_local_ip()
+	server_url = f"http://{local_ip}:{PORT}"
+
+	print("-" * 50)
+	print(f"Hold the '{PUSH_TO_TALK_KEY}' key to record your voice.")
+	print(f"Or open http://127.0.0.1:{PORT} in your browser.")
+	if local_ip != '127.0.0.1':
+		print(f"On other devices on the same network, open: {server_url}")
+
+	try:
+		import qrcode
+
+		qr = qrcode.QRCode()
+		qr.add_data(server_url)
+		qr.make(fit=True)
+
+		print("\nScan this QR code to connect your mobile remote:")
+		qr.print_tty()
+	except ImportError:
+		print(
+		    "\n[NOTE] To show a QR code for mobile access, run: pip install 'qrcode[pil]'"
+		)
+		state.qr_code_buffer = None
+	print("-" * 50)
+	# --- End Server Info & QR Code ---
+
 	print("\nReady for interaction.")
 
 

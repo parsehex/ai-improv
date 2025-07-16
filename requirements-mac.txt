@@ -331,6 +331,7 @@ pytz==2025.2
 pywhispercpp @ git+https://github.com/absadiki/pywhispercpp@2b09b82f681d3b01b25cdb1b314c57d7cc193179
 PyYAML==6.0.2
 pyzmq==27.0.0
+qrcode==8.2
 rdflib==7.1.4
 referencing==0.36.2
 regex==2024.11.6
