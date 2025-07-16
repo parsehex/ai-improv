@@ -154,6 +154,7 @@ pydantic-settings==2.10.1
 pydantic_core==2.33.2
 pydub==0.25.1
 pyee==13.0.0
+pygame==2.6.1
 Pygments==2.19.2
 pylibsrtp==0.12.0
 pyloudnorm==0.1.1
@@ -366,7 +367,7 @@ sympy==1.14.0
 thinc==8.3.6
 threadpoolctl==3.6.0
 tiktoken==0.9.0
-tokenizers==0.20.3
+tokenizers==0.21.2
 tomli==2.2.1
 tomlkit==0.13.3
 torch==2.7.1
@@ -374,7 +375,7 @@ torchaudio==2.7.1
 tornado==6.5.1
 tqdm==4.67.1
 traitlets==5.14.3
-transformers==4.46.3
+transformers==4.53.2
 typer==0.16.0
 typing-inspection==0.4.1
 typing_extensions==4.14.1
