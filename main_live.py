@@ -13,7 +13,7 @@ import lib.llm as llm
 LLM_INPUT_FILE = "./data/llm_input.txt"
 LLM_OUTPUT_FILE = "./data/llm_output.txt"
 LIVE_TRANSCRIPT_FILE = "./data/live_transcript_output.txt"
-CHARACTER_STATE_FILE = "./data/character_state.txt"  # For text-as-image
+CHARACTER_STATE_FILE = "./data/app_state.txt"
 
 # Conversation logic settings
 PAUSE_THRESHOLD_S = 2.0  # Seconds of silence to trigger LLM response

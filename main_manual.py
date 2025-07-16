@@ -4,6 +4,7 @@ import time
 import threading
 import queue
 import shutil
+from typing import Dict, Any
 
 # --- Dependencies for manual recording ---
 # You'll need to install these:
@@ -26,25 +27,14 @@ LLM_OUTPUT_FILE = "./data/llm_output.txt"
 APP_STATE_FILE = "./data/app_state.txt"
 RECORDED_AUDIO_FILE = "./data/audio.wav"
 CURRENT_IMAGE_PATH = "./data/current_character_image.png"
+CHARACTERS_DIR = "./data/characters"
 
 # Hotkey for push-to-talk
-# Using right option/alt key. You can change this.
-# See pynput docs for key names: https://pynput.readthedocs.io/en/latest/keyboard.html
 PUSH_TO_TALK_KEY = keyboard.Key.alt_r
 
 # Audio recording settings
 SAMPLE_RATE = 16000  # Whisper models are trained on 16kHz audio
 CHANNELS = 1
-
-with open('./data/character_images/available_images.json') as f:
-	image_map = json.load(f)
-
-sys_prompt = (
-    "You are a helpful, expressive AI character named Luna. "
-    "Respond in JSON object format with keys: 'text' (spoken output), and optional 'emotion'. "
-    "Valid emotions are: ['neutral', 'happy', 'surprised'].\n"
-    "Example response:\n"
-    '{"text": "Hello! How can I help you today?", "emotion": "happy"}')
 
 
 # --- State Management ---
@@ -53,22 +43,83 @@ class AppState:
 
 	def __init__(self):
 		self.lock = threading.Lock()
-		self.current_state = "Idle"  # Idle, Listening, Processing
-		self.current_emotion = "neutral"
+		self.current_state = "Idle"  # Idle, Listening, Processing, etc.
 		self.is_recording = False
 		self.audio_frames = []
 		# A queue to process interactions sequentially
 		self.processing_queue = queue.Queue()
+		# Character-related state
+		self.available_characters: Dict[str, Dict[str, Any]] = {}
+		self.current_character_name: str | None = None
 
 
 state = AppState()
 
 
-# --- File I/O ---
+# --- Character Management ---
+def load_characters():
+	"""Scans the characters directory and loads their configs."""
+	print("Loading characters...")
+	if not os.path.isdir(CHARACTERS_DIR):
+		print(f"Warning: Characters directory not found at {CHARACTERS_DIR}")
+		return
+
+	for char_name in os.listdir(CHARACTERS_DIR):
+		char_dir = os.path.join(CHARACTERS_DIR, char_name)
+		config_path = os.path.join(char_dir, "config.json")
+		if os.path.isdir(char_dir) and os.path.isfile(config_path):
+			try:
+				with open(config_path, 'r') as f:
+					config_data = json.load(f)
+					# Add a runtime state for the character's current emotion
+					config_data['emotion'] = 'neutral'
+					state.available_characters[char_name] = config_data
+					print(f"  - Loaded character: {config_data['name']}")
+			except Exception as e:
+				print(f"Error loading character '{char_name}': {e}")
+
+	if state.available_characters:
+		# Set the first character found as the default
+		state.current_character_name = sorted(state.available_characters.keys())[0]
+		print(
+		    f"Default character set to: {state.available_characters[state.current_character_name]['name']}"
+		)
+	else:
+		print("No characters found. The application may not function correctly.")
+
+
+def get_current_character() -> Dict[str, Any] | None:
+	"""Safely gets the config dictionary for the current character."""
+	if not state.current_character_name:
+		return None
+	return state.available_characters.get(state.current_character_name)
+
+
+def get_system_prompt() -> str:
+	"""Generates the system prompt for the current character."""
+	character = get_current_character()
+	if not character:
+		return "You are a helpful AI."  # Fallback
+
+	char_name = character.get('name', 'AI')
+	# Dynamically get valid emotions from the character's image map
+	valid_emotions = [
+	    e for e in character.get('images', {}).keys()
+	    if e not in ['talking', 'listening', 'thinking']
+	]
+
+	return (
+	    f"You are a helpful, expressive AI character named {char_name}. "
+	    f"Respond in JSON object format with keys: 'text' (spoken output), and optional 'emotion'. "
+	    f"Valid emotions are: {valid_emotions}.\n"
+	    "Example response:\n"
+	    '{"text": "Hello! How can I help you today?", "emotion": "happy"}')
+
+
+# --- File I/O & State Updates ---
 def write_file(filepath, content):
 	"""Safely write content to a file, overwriting it."""
 	try:
-		# Ensure directory exists
 		os.makedirs(os.path.dirname(filepath), exist_ok=True)
 		with open(filepath, 'w', encoding='utf-8') as f:
 			f.write(content)
@@ -78,14 +129,22 @@ def write_file(filepath, content):
 
 def update_image_for_state(state_override=None):
 	"""Updates character image based on app state or emotion."""
-	image_key = state_override if state_override else state.current_emotion
+	character = get_current_character()
+	if not character:
+		return
+
+	image_map = character.get('images', {})
+	current_emotion = character.get('emotion', 'neutral')
+	image_key = state_override if state_override else current_emotion
 	image_path = image_map.get(image_key)
 
-	if image_path:
+	if image_path and os.path.exists(image_path):
 		shutil.copy(image_path, CURRENT_IMAGE_PATH)
 		print(f"Updated image to: {image_key}")
 	else:
-		print(f"No image found for state: {image_key}")
+		# Render text as a fallback image
+		print(f"Rendering fallback text for state: {image_key}")
+		write_file(CURRENT_IMAGE_PATH, image_key.upper())
 
 
 def update_character_state(new_state: str):
@@ -95,10 +154,11 @@ def update_character_state(new_state: str):
 	print(f"[State Change] => {new_state}")
 	write_file(APP_STATE_FILE, new_state)
 
+	# Update the displayed image based on the state
 	if new_state in ["Listening", "Thinking", "Talking"]:
 		update_image_for_state(new_state.lower())
 	elif new_state == "Idle":
-		update_image_for_state()
+		update_image_for_state()  # This will show the character's current emotion
 
 
 # --- Audio Recording ---
@@ -164,7 +224,7 @@ def stop_recording():
 # --- Core Logic ---
 def process_interaction(audio_path: str):
 	"""
-    The full pipeline: Transcribe -> LLM -> TTS (placeholder).
+    The full pipeline: Transcribe -> LLM -> TTS.
     This runs in a separate thread to not block the main app.
     """
 	# 1. Transcribe Audio
@@ -186,8 +246,16 @@ def process_interaction(audio_path: str):
 
 	# 2. Get LLM Response
 	update_character_state("Thinking...")
+	character = get_current_character()
+	if not character:
+		print("Error: No character loaded.")
+		update_character_state("Idle")
+		return
+
 	try:
-		raw_response = llm.generate(user_text, sys_input=sys_prompt, json=True)
+		raw_response = llm.generate(user_text,
+		                            sys_input=get_system_prompt(),
+		                            json=True)
 		parsed = json.loads(raw_response)
 		ai_text = parsed.get('text', '')
 		emotion = parsed.get('emotion', None)
@@ -196,19 +264,20 @@ def process_interaction(audio_path: str):
 		ai_text = "I'm sorry, something went wrong."
 		emotion = None
 
-	# Update text files
 	write_file(LLM_OUTPUT_FILE, ai_text)
 
-	# Copy new image if applicable
-	if emotion and emotion in image_map:
-		state.current_emotion = emotion
+	# Update character's internal emotion state if a valid one was returned
+	if emotion and emotion in character.get('images', {}):
+		character['emotion'] = emotion
 
 	# 3. TTS Generation and Playback
 	update_character_state("Talking")
 	tts_audio_path = "./data/output.wav"
 
 	try:
-		tts.generate(ai_text, output_path=tts_audio_path)
+		tts.generate(ai_text,
+		             output_path=tts_audio_path,
+		             voice=character.get('voice', 'af_heart'))
 		print(f"TTS audio saved to {tts_audio_path}")
 	except Exception as e:
 		print(f"Error generating TTS: {e}")
@@ -218,8 +287,6 @@ def process_interaction(audio_path: str):
 	# Playback
 	try:
 		import soundfile as sf
-		import sounddevice as sd
-
 		data, samplerate = sf.read(tts_audio_path, dtype='float32')
 		sd.play(data, samplerate)
 		sd.wait()  # Wait until playback is done
@@ -248,7 +315,6 @@ def on_press(key):
 		is_idle = state.current_state == "Idle"
 
 	if key == PUSH_TO_TALK_KEY and is_idle:
-		print('Press')
 		start_recording()
 
 
@@ -257,7 +323,6 @@ def on_release(key):
 		is_recording_state = state.current_state == "Listening"
 
 	if key == PUSH_TO_TALK_KEY and is_recording_state:
-		print('Release')
 		stop_recording()
 
 
@@ -271,10 +336,11 @@ def main():
 	)
 
 	# Initialize components (can take a moment)
+	load_characters()
 	llm.init()
 	stt.init()
 	tts.init()
-	print("LLM and STT models initialized.")
+	print("LLM, STT, and TTS models initialized.")
 
 	# Clear/initialize Vuo files on startup
 	write_file(LLM_INPUT_FILE, "")
