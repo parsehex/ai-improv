@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0, user-scalable=no"
+		/>
+		<title>AI Improv Remote</title>
+		<style>
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+					Helvetica, Arial, sans-serif;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				height: 100vh;
+				margin: 0;
+				background-color: #1c1c1e;
+				color: #f2f2f7;
+				touch-action: manipulation; /* Prevents double-tap to zoom on mobile */
+			}
+			.container {
+				text-align: center;
+			}
+			#status {
+				font-size: 2rem;
+				font-weight: 500;
+				margin-bottom: 2rem;
+				min-height: 3rem;
+				color: #8e8e93;
+			}
+			#ptt-button {
+				width: 150px;
+				height: 150px;
+				border-radius: 50%;
+				border: 4px solid #3a3a3c;
+				background-color: #2c2c2e;
+				color: #f2f2f7;
+				font-size: 1.2rem;
+				font-weight: bold;
+				cursor: pointer;
+				user-select: none;
+				transition: all 0.2s ease-in-out;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+			}
+			#ptt-button:active,
+			#ptt-button.active {
+				transform: scale(0.95);
+				border-color: #0a84ff;
+			}
+			#ptt-button.listening {
+				background-color: #d13c3c;
+				border-color: #ff453a;
+				color: white;
+			}
+			#ptt-button.processing {
+				background-color: #32ade6;
+				border-color: #64d2ff;
+				color: white;
+				cursor: not-allowed;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="container">
+			<div id="status">Connecting...</div>
+			<button id="ptt-button" disabled>Hold to Talk</button>
+		</div>
+
+		<script>
+			const statusEl = document.getElementById('status');
+			const pttButton = document.getElementById('ptt-button');
+
+			const host = window.location.host;
+			const ws = new WebSocket(`ws://${host}/ws`);
+
+			function updateUI(state) {
+				statusEl.textContent = state;
+				pttButton.classList.remove('listening', 'processing', 'active');
+				pttButton.disabled = false;
+
+				switch (state.toLowerCase()) {
+					case 'listening':
+						pttButton.classList.add('listening');
+						break;
+					case 'processing':
+					case 'transcribing...':
+					case 'thinking...':
+					case 'talking':
+						pttButton.classList.add('processing');
+						statusEl.textContent = 'Processing...'; // Consolidate processing states for UI
+						pttButton.disabled = true;
+						break;
+					case 'idle':
+						break;
+					default:
+						pttButton.disabled = true;
+						break;
+				}
+			}
+
+			ws.onopen = () => {
+				console.log('WebSocket connection established');
+				updateUI('Idle');
+			};
+
+			ws.onmessage = (event) => {
+				const data = JSON.parse(event.data);
+				if (data.type === 'state_update') {
+					console.log('Received state update:', data.state);
+					updateUI(data.state);
+				}
+			};
+
+			ws.onclose = () => {
+				console.log('WebSocket connection closed');
+				updateUI('Offline');
+			};
+
+			ws.onerror = (error) => {
+				console.error('WebSocket error:', error);
+				updateUI('Error');
+			};
+
+			function sendAction(action) {
+				if (ws.readyState === WebSocket.OPEN) {
+					ws.send(JSON.stringify({ action: action }));
+				}
+			}
+
+			// Use both mouse and touch events for broad compatibility
+			pttButton.addEventListener('mousedown', () =>
+				sendAction('start_recording')
+			);
+			pttButton.addEventListener('mouseup', () => sendAction('stop_recording'));
+			pttButton.addEventListener('mouseleave', () =>
+				sendAction('stop_recording')
+			); // Stop if mouse leaves button
+
+			pttButton.addEventListener('touchstart', (e) => {
+				e.preventDefault(); // Prevent mouse events from firing
+				sendAction('start_recording');
+			});
+			pttButton.addEventListener('touchend', () =>
+				sendAction('stop_recording')
+			);
+		</script>
+	</body>
+</html>

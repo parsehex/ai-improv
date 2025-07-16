@@ -30,10 +30,7 @@ def unload():
 	del model
 
 
-def generate(text: str,
-             output_path='audio.wav',
-             voice='af_heart',
-             speed=Number(1.2)):
+def generate(text: str, output_path='audio.wav', voice='af_heart', speed=1.2):
 	global pipeline
 	if not pipeline:
 		init()
