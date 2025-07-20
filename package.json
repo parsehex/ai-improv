@@ -1,18 +1,19 @@
 {
   "name": "ai-improv-server",
   "version": "1.0.0",
-  "main": "dist/index.js",
+  "main": "app_server/dist/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node .",
     "dev": "tsc-watch --onSuccess \"node .\"",
-    "frontend": "tsc ../frontend/main.ts --target es2020 --module esnext",
-    "generate-cert": "openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./certs/key.pem -out ./certs/cert.pem"
+    "frontend": "tsc ./frontend/main.ts --target es2020",
+    "generate-cert": "openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./app_server/certs/key.pem -out ./app_server/certs/cert.pem"
   },
   "dependencies": {
     "axios": "^1.6.8",
     "express": "^4.19.2",
     "form-data": "^4.0.4",
+    "partial-json": "^0.1.7",
     "ws": "^8.17.0"
   },
   "devDependencies": {
@@ -20,6 +21,7 @@
     "@types/node": "^20.12.7",
     "@types/ws": "^8.5.10",
     "tsc-watch": "^6.2.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
   }
 }

@@ -15,7 +15,7 @@ const HTTPS_PORT = 8443; // Use a different port for the secure server
 
 const AI_API_URL = 'http://127.0.0.1:8001';
 const CHARACTERS_DIR = path.join(__dirname, '../../data/characters');
-const FRONTEND_DIR = path.join(__dirname, '../../frontend');
+const FRONTEND_DIR = path.join(__dirname, '../../frontend/dist');
 const CERTS_DIR = path.join(__dirname, '../certs');
 
 interface Character {
@@ -163,8 +163,8 @@ async function handleAudioProcessing(
 	const audioBuffer = Buffer.from(audioBase64, 'base64');
 
 	try {
+		// 1. Speech-to-Text
 		const formData = new FormData();
-		// Use the fileName from the client, with a fallback
 		formData.append('audio_file', audioBuffer, fileName || 'audio.webm');
 		const sttResponse = await axios.post(`${AI_API_URL}/stt`, formData, {
 			headers: { ...formData.getHeaders() },
@@ -185,36 +185,101 @@ async function handleAudioProcessing(
 			payload: { status: 'Thinking...' },
 		});
 
-		const llmResponse = await axios.post(`${AI_API_URL}/llm`, {
-			prompt: userText,
-			system_prompt: getSystemPrompt(),
-		});
-		const { text: aiText, emotion } = llmResponse.data;
-
-		state.chatHistory.push({ role: 'assistant', content: aiText });
-		broadcast(wss, {
-			type: 'CHAT_MESSAGE',
-			payload: { role: 'assistant', content: aiText, emotion },
-		});
-		broadcast(wss, {
-			type: 'STATUS_UPDATE',
-			payload: { status: 'Speaking...' },
-		});
-
-		const ttsResponse = await axios.post(
-			`${AI_API_URL}/tts`,
+		// 2. Language Model (Streaming)
+		const llmStreamResponse = await axios.post(
+			`${AI_API_URL}/llm`,
 			{
-				text: aiText,
-				voice:
-					state.characters[state.currentCharacterKey!]?.voice || 'af_heart',
+				prompt: userText,
+				system_prompt: getSystemPrompt(),
 			},
-			{ responseType: 'arraybuffer' }
+			{ responseType: 'stream' } // Critical for streaming
 		);
 
-		const audioData = Buffer.from(ttsResponse.data, 'binary').toString(
-			'base64'
-		);
-		broadcast(wss, { type: 'PLAY_AUDIO', payload: { audio: audioData } });
+		let fullResponse = '';
+		broadcast(wss, { type: 'AI_RESPONSE_START' });
+
+		const stream = llmStreamResponse.data as NodeJS.ReadableStream;
+
+		stream.on('data', (chunk: Buffer) => {
+			const chunkStr = chunk.toString();
+			fullResponse += chunkStr;
+			broadcast(wss, {
+				type: 'AI_RESPONSE_CHUNK',
+				payload: { chunk: chunkStr },
+			});
+		});
+
+		stream.on('end', async () => {
+			console.log('LLM stream ended.');
+			let finalDataObject: { text: string; emotion: string };
+			try {
+				finalDataObject = JSON.parse(fullResponse);
+			} catch (e) {
+				console.error(
+					'Failed to parse final LLM JSON:',
+					e,
+					'Response was:',
+					fullResponse
+				);
+				finalDataObject = {
+					text: fullResponse || "I'm sorry, my thoughts got tangled.",
+					emotion: 'surprised',
+				};
+			}
+
+			broadcast(wss, { type: 'AI_RESPONSE_END' });
+			state.chatHistory.push({
+				role: 'assistant',
+				content: finalDataObject.text,
+			});
+
+			broadcast(wss, {
+				type: 'STATUS_UPDATE',
+				payload: { status: 'Speaking...' },
+			});
+
+			// 3. Text-to-Speech (after stream is complete)
+			try {
+				const ttsResponse = await axios.post(
+					`${AI_API_URL}/tts`,
+					{
+						text: finalDataObject.text,
+						voice:
+							state.characters[state.currentCharacterKey!]?.voice || 'af_heart',
+					},
+					{ responseType: 'arraybuffer' }
+				);
+				const audioData = Buffer.from(ttsResponse.data, 'binary').toString(
+					'base64'
+				);
+				broadcast(wss, { type: 'PLAY_AUDIO', payload: { audio: audioData } });
+			} catch (ttsError: any) {
+				console.error('Error during TTS call:', ttsError.message);
+				broadcast(wss, { type: 'STATUS_UPDATE', payload: { status: 'Error' } });
+				setTimeout(
+					() =>
+						broadcast(wss, {
+							type: 'STATUS_UPDATE',
+							payload: { status: 'Idle' },
+						}),
+					2000
+				);
+			}
+		});
+
+		stream.on('error', (err) => {
+			console.error('LLM Stream Error:', err);
+			broadcast(wss, { type: 'STATUS_UPDATE', payload: { status: 'Error' } });
+			broadcast(wss, { type: 'AI_RESPONSE_END' }); // End the stream on the client
+			setTimeout(
+				() =>
+					broadcast(wss, {
+						type: 'STATUS_UPDATE',
+						payload: { status: 'Idle' },
+					}),
+				2000
+			);
+		});
 	} catch (error: any) {
 		if (error.response) {
 			console.error('Error in processing chain:', error.response.data);

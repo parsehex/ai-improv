@@ -1,5 +1,5 @@
 from llama_cpp import Llama
-from openai.types.chat import ChatCompletion
+from openai.types.chat import ChatCompletion, ChatCompletionChunk
 import config as cfg
 
 model: Llama
@@ -48,3 +48,33 @@ def generate(input: str, sys_input='', json=False):
 	output_str = output.choices[0].message.content
 	assert output_str is not None
 	return output_str
+
+
+def generate_stream(input: str, sys_input='', json=False):
+	"""
+    Generates a response from the language model as a stream of text chunks.
+    """
+	global model
+	if not model:
+		init()
+
+	messages = [{'role': 'user', 'content': input}]
+	if sys_input:
+		msg = {'role': 'system', 'content': sys_input}
+		messages.insert(0, msg)
+
+	kwargs = {
+	    'messages': messages,
+	    'max_tokens': 256,  # Increased token limit for longer streaming
+	    'stream': True
+	}
+	if json:
+		kwargs['response_format'] = {'type': 'json_object'}
+
+	stream = model.create_chat_completion_openai_v1(**kwargs)
+
+	for chunk in stream:
+		assert isinstance(chunk, ChatCompletionChunk)
+		content = chunk.choices[0].delta.content
+		if content:
+			yield content

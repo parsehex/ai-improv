@@ -27,6 +27,10 @@ def startup_event():
 	stt.init()
 	tts.init()
 	print("Models initialized.")
+	print("Now start the Node server. In a new terminal, run:")
+	print("cd app_server")
+	print("npm run build # if necessary")
+	print("npm start")
 
 
 @app.on_event("shutdown")
@@ -94,20 +98,32 @@ class LLMRequest(BaseModel):
 @app.post("/llm")
 async def language_model_generate(request: LLMRequest):
 	"""
-    Accepts a user prompt and system prompt, returns the model's response.
+    Accepts a user prompt and system prompt, and streams the model's response.
     """
 	try:
-		response = llm.generate(request.prompt,
-		                        sys_input=request.system_prompt,
-		                        json=True)
-		return json.loads(response)
+		# The generator for the streaming response
+		def stream_generator():
+			try:
+				for chunk in llm.generate_stream(request.prompt,
+				                                 sys_input=request.system_prompt,
+				                                 json=True):
+					yield chunk
+			except Exception as e:
+				print(f"LLM stream error: {e}")
+				# The stream will simply end here. The client needs to handle it.
+				pass
+
+		return StreamingResponse(stream_generator(), media_type="text/plain")
+
 	except Exception as e:
-		print(f"LLM Error: {e}")
-		# Fallback response
-		return {
-		    "text": "I'm sorry, I had a little trouble thinking.",
-		    "emotion": "neutral"
-		}
+		print(f"LLM Error before stream start: {e}")
+		# This will catch errors before the stream starts (e.g., model not loaded)
+		raise HTTPException(
+		    status_code=500,
+		    detail=json.dumps({
+		        "text": "I'm sorry, I had a little trouble starting to think.",
+		        "emotion": "neutral"
+		    }))
 
 
 class TTSRequest(BaseModel):
@@ -139,7 +155,3 @@ async def text_to_speech(request: TTSRequest):
 if __name__ == "__main__":
 	import uvicorn
 	uvicorn.run(app, host="0.0.0.0", port=8001)
-	print("Now start the Node server. In a new terminal, run:")
-	print("cd app_server")
-	print("npm run build # if necessary")
-	print("npm start")

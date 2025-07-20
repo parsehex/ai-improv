@@ -1,3 +1,5 @@
+import { parse } from 'partial-json';
+
 // --- DOM Elements ---
 const containerEl = document.querySelector('.container') as HTMLDivElement;
 const statusEl = document.getElementById('status')!;
@@ -28,6 +30,11 @@ let currentCharacterKey: string | null = null;
 let isToggleRecording = false;
 const TOGGLE_RECORD_KEY = 'aiImprov-toggleRecord';
 
+// State for streaming response
+let currentAssistantMessageEl: HTMLDivElement | null = null;
+let currentResponseText = '';
+let lastResponseEmotion: string | null = null;
+
 // --- WebSocket Connection ---
 function connect() {
 	const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -55,9 +62,46 @@ function handleMessage(type: string, payload: any) {
 		case 'STATUS_UPDATE':
 			updateStatus(payload.status);
 			break;
-		case 'CHAT_MESSAGE':
+		case 'CHAT_MESSAGE': // Now only for user messages
 			addChatMessage(payload.role, payload.content);
-			if (payload.emotion) updateCharacterImage(payload.emotion);
+			break;
+		case 'AI_RESPONSE_START':
+			const msgDiv = document.createElement('div');
+			msgDiv.classList.add('chat-message', 'assistant-message');
+			chatHistoryEl.appendChild(msgDiv);
+			chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+			currentAssistantMessageEl = msgDiv;
+			currentResponseText = '';
+			lastResponseEmotion = null;
+			updateCharacterImage('talking');
+			break;
+		case 'AI_RESPONSE_CHUNK':
+			if (!currentAssistantMessageEl) return;
+			currentResponseText += payload.chunk;
+			try {
+				const partialData = parse(currentResponseText);
+				if (partialData.text) {
+					currentAssistantMessageEl.textContent = partialData.text;
+				}
+			} catch (e) {
+				// Fallback for malformed JSON, show raw text
+				currentAssistantMessageEl.textContent = currentResponseText;
+			}
+			chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+			break;
+		case 'AI_RESPONSE_END':
+			if (currentAssistantMessageEl) {
+				try {
+					const finalData = JSON.parse(currentResponseText);
+					if (finalData.emotion) {
+						lastResponseEmotion = finalData.emotion;
+					}
+				} catch (e) {
+					console.error("Couldn't parse final JSON for emotion", e);
+				}
+			}
+			currentAssistantMessageEl = null;
+			currentResponseText = '';
 			break;
 		case 'PLAY_AUDIO':
 			playAudio(payload.audio);
@@ -173,7 +217,15 @@ function stopRecording() {
 function playAudio(audioBase64: string) {
 	const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
 	audio.play();
-	audio.onended = () => updateStatus('Idle');
+	audio.onended = () => {
+		updateStatus('Idle');
+		// After speaking, set the character's final emotion image
+		if (lastResponseEmotion) {
+			updateCharacterImage(lastResponseEmotion);
+		} else {
+			updateCharacterImage('neutral'); // Fallback
+		}
+	};
 }
 
 // --- Event Listeners ---
@@ -204,7 +256,6 @@ savePromptButton.addEventListener('click', () => {
 	alert('Instructions saved!');
 });
 
-// Add this event listener for the focus mode
 characterImage.addEventListener('click', () => {
 	containerEl.classList.toggle('focus-mode');
 });
