@@ -105,7 +105,8 @@ function setupWebSocketLogic(wss: WebSocketServer) {
 
 			switch (type) {
 				case 'PROCESS_AUDIO':
-					handleAudioProcessing(wss, payload.audio);
+					// Pass the fileName from the payload to the handler
+					handleAudioProcessing(wss, payload.audio, payload.fileName);
 					break;
 				case 'SWITCH_CHARACTER':
 					state.currentCharacterKey = payload.key;
@@ -152,7 +153,8 @@ function broadcast(wss: WebSocketServer, message: object) {
 // --- Core Interaction Logic (pass wss to broadcast) ---
 async function handleAudioProcessing(
 	wss: WebSocketServer,
-	audioBase64: string
+	audioBase64: string,
+	fileName: string
 ) {
 	broadcast(wss, {
 		type: 'STATUS_UPDATE',
@@ -161,9 +163,9 @@ async function handleAudioProcessing(
 	const audioBuffer = Buffer.from(audioBase64, 'base64');
 
 	try {
-		// ... (rest of the function is the same, just using the passed wss)
 		const formData = new FormData();
-		formData.append('audio_file', audioBuffer, 'audio.wav');
+		// Use the fileName from the client, with a fallback
+		formData.append('audio_file', audioBuffer, fileName || 'audio.webm');
 		const sttResponse = await axios.post(`${AI_API_URL}/stt`, formData, {
 			headers: { ...formData.getHeaders() },
 		});

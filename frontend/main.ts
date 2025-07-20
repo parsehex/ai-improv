@@ -26,6 +26,7 @@ let audioChunks: Blob[] = [];
 let characters: Record<string, any> = {};
 let currentCharacterKey: string | null = null;
 let isToggleRecording = false;
+const TOGGLE_RECORD_KEY = 'aiImprov-toggleRecord';
 
 // --- WebSocket Connection ---
 function connect() {
@@ -128,12 +129,28 @@ async function startRecording() {
 		mediaRecorder = new MediaRecorder(stream);
 		audioChunks = [];
 		mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+
 		mediaRecorder.onstop = () => {
-			const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+			if (audioChunks.length === 0 || !mediaRecorder) {
+				console.warn('No audio data recorded.');
+				updateStatus('Idle');
+				return;
+			}
+			// Use the recorder's mimeType to know the true format.
+			const mimeType = mediaRecorder.mimeType;
+			const audioBlob = new Blob(audioChunks, { type: mimeType });
+
+			// Derive a file extension from the mimeType.
+			// e.g., "audio/webm;codecs=opus" -> "webm"
+			const extension = mimeType.split(';')[0].split('/')[1];
+			const fileName = `audio.${extension}`;
+			console.log(`Recorded audio as ${fileName} (MIME: ${mimeType})`);
+
 			const reader = new FileReader();
 			reader.onloadend = () => {
 				const base64 = (reader.result as string).split(',')[1];
-				sendMessage('PROCESS_AUDIO', { audio: base64 });
+				// Send the fileName to the server so it can be passed to the AI API.
+				sendMessage('PROCESS_AUDIO', { audio: base64, fileName: fileName });
 			};
 			reader.readAsDataURL(audioBlob);
 		};
@@ -192,5 +209,12 @@ characterImage.addEventListener('click', () => {
 	containerEl.classList.toggle('focus-mode');
 });
 
+toggleRecordCheck.addEventListener('change', () => {
+	localStorage.setItem(TOGGLE_RECORD_KEY, String(toggleRecordCheck.checked));
+});
+
 // --- Initialization ---
+const savedToggleState = localStorage.getItem(TOGGLE_RECORD_KEY);
+toggleRecordCheck.checked = savedToggleState === 'true';
+
 connect();

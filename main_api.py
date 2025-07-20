@@ -5,6 +5,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import soundfile as sf
 import numpy as np
+import ffmpeg
+import os
 
 # Assuming 'lib' is in the python path.
 # If running from the root dir, you might need to add it:
@@ -42,19 +44,46 @@ def shutdown_event():
 @app.post("/stt")
 async def speech_to_text(audio_file: UploadFile = File(...)):
 	"""
-    Accepts an audio file and returns the transcribed text.
+    Accepts an audio file, converts it to a standard WAV format,
+    and returns the transcribed text.
     """
+	# Define temporary paths. Using the original filename helps keep track.
+	temp_input_path = f"data/temp_input_{audio_file.filename}"
+	temp_output_path = "data/temp_stt_input.wav"
+
 	try:
-		# Save temporary file to be read by the STT library
-		temp_audio_path = "data/temp_stt_input.wav"
-		with open(temp_audio_path, "wb") as f:
+		# 1. Save the uploaded file (e.g., .webm) to a temporary location.
+		with open(temp_input_path, "wb") as f:
 			f.write(await audio_file.read())
 
-		result = stt.generate(temp_audio_path, verbose=False)
+		# 2. Use ffmpeg to convert the input file to a 16kHz mono WAV file.
+		print(f"Converting '{temp_input_path}' to '{temp_output_path}'...")
+		(ffmpeg.input(temp_input_path).output(
+		    temp_output_path,
+		    ac=1,  # Mono channel
+		    ar='16000',  # 16kHz sample rate
+		    format='wav').run(overwrite_output=True, quiet=True))
+		print("Conversion complete.")
+
+		# 3. Pass the *converted* WAV file to the STT function.
+		result = stt.generate(temp_output_path, verbose=False)
 		return {"text": result.text.strip()}
+
+	except ffmpeg.Error as e:
+		# Provide more specific feedback if ffmpeg fails
+		error_details = e.stderr.decode() if e.stderr else str(e)
+		print(f"ffmpeg error: {error_details}")
+		raise HTTPException(status_code=500,
+		                    detail=f"Audio conversion failed: {error_details}")
 	except Exception as e:
 		print(f"STT Error: {e}")
 		raise HTTPException(status_code=500, detail=str(e))
+	finally:
+		# 4. Clean up both temporary files.
+		if os.path.exists(temp_input_path):
+			os.remove(temp_input_path)
+		if os.path.exists(temp_output_path):
+			os.remove(temp_output_path)
 
 
 class LLMRequest(BaseModel):
