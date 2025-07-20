@@ -10,3 +10,4 @@ dist/
 *.wav
 *.mp3
 *.js
+app_server/certs

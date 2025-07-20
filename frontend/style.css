@@ -30,6 +30,7 @@ body {
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+	transition: max-height 0.3s ease-in-out; /* Smooth transition */
 }
 
 .main-content {
@@ -54,6 +55,8 @@ body {
 	max-height: 400px;
 	border-radius: 12px;
 	object-fit: contain;
+	cursor: pointer; /* Add cursor to indicate it's clickable */
+	transition: max-height 0.3s ease-in-out; /* Smooth transition */
 }
 
 #status {
@@ -109,6 +112,12 @@ body {
 	flex-direction: column;
 	gap: 15px;
 	flex-shrink: 0; /* Prevent controls from shrinking */
+	transition: all 0.3s ease-in-out;
+}
+
+/* --- Focus Mode Style --- */
+.container.focus-mode .controls {
+	display: none;
 }
 
 .top-controls {
@@ -166,31 +175,35 @@ button {
 /* --- Mobile Responsive Styles --- */
 @media (max-width: 768px) {
 	body {
-		/* Remove desktop centering to use full screen */
 		display: block;
 	}
 
 	.container {
-		height: 100vh; /* Fill the entire viewport height */
+		height: 100vh;
 		max-height: 100vh;
 		border-radius: 0;
 		box-shadow: none;
 	}
 
 	.main-content {
-		flex-direction: column; /* Stack main areas vertically */
+		flex-direction: column;
 		padding: 10px;
 		gap: 10px;
 	}
 
 	.character-area {
-		flex: 0 0 auto; /* Don't grow, size based on content */
+		flex: 0 0 auto;
 		justify-content: flex-start;
 		padding-bottom: 0;
 	}
 
 	#character-image {
-		max-height: 25vh; /* Use viewport height for responsive image */
+		max-height: 25vh;
+	}
+
+	/* --- Focus Mode Mobile Style --- */
+	.container.focus-mode #character-image {
+		max-height: 50vh;
 	}
 
 	#status {
@@ -198,7 +211,7 @@ button {
 	}
 
 	.chat-area {
-		flex-grow: 1; /* Allow chat to take all available space */
+		flex-grow: 1;
 		padding: 10px;
 	}
 
@@ -213,7 +226,7 @@ button {
 
 	.top-controls {
 		flex-direction: column;
-		align-items: stretch; /* Make children full-width */
+		align-items: stretch;
 	}
 
 	.system-prompt-area {

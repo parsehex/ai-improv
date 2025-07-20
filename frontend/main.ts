@@ -1,4 +1,5 @@
 // --- DOM Elements ---
+const containerEl = document.querySelector('.container') as HTMLDivElement;
 const statusEl = document.getElementById('status')!;
 const pttButton = document.getElementById('ptt-button') as HTMLButtonElement;
 const characterSelect = document.getElementById(
@@ -28,7 +29,8 @@ let isToggleRecording = false;
 
 // --- WebSocket Connection ---
 function connect() {
-	ws = new WebSocket(`ws://${window.location.host}`);
+	const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+	ws = new WebSocket(`${protocol}://${window.location.host}`);
 
 	ws.onopen = () => updateStatus('Idle');
 	ws.onclose = () => updateStatus('Disconnected');
@@ -121,20 +123,28 @@ async function startRecording() {
 	if (mediaRecorder?.state === 'recording') return;
 	updateStatus('Listening...');
 
-	const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-	mediaRecorder = new MediaRecorder(stream);
-	audioChunks = [];
-	mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
-	mediaRecorder.onstop = () => {
-		const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-		const reader = new FileReader();
-		reader.onloadend = () => {
-			const base64 = (reader.result as string).split(',')[1];
-			sendMessage('PROCESS_AUDIO', { audio: base64 });
+	try {
+		const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		mediaRecorder = new MediaRecorder(stream);
+		audioChunks = [];
+		mediaRecorder.ondataavailable = (event) => audioChunks.push(event.data);
+		mediaRecorder.onstop = () => {
+			const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+			const reader = new FileReader();
+			reader.onloadend = () => {
+				const base64 = (reader.result as string).split(',')[1];
+				sendMessage('PROCESS_AUDIO', { audio: base64 });
+			};
+			reader.readAsDataURL(audioBlob);
 		};
-		reader.readAsDataURL(audioBlob);
-	};
-	mediaRecorder.start();
+		mediaRecorder.start();
+	} catch (err) {
+		console.error('Error getting audio stream:', err);
+		updateStatus('Mic Error!');
+		alert(
+			'Could not access the microphone. On mobile, this often requires an HTTPS connection.'
+		);
+	}
 }
 
 function stopRecording() {
@@ -175,6 +185,11 @@ characterSelect.addEventListener('change', () => {
 savePromptButton.addEventListener('click', () => {
 	sendMessage('SET_INSTRUCTIONS', { instructions: systemPromptText.value });
 	alert('Instructions saved!');
+});
+
+// Add this event listener for the focus mode
+characterImage.addEventListener('click', () => {
+	containerEl.classList.toggle('focus-mode');
 });
 
 // --- Initialization ---
