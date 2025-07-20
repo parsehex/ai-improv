@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0, user-scalable=no"
+		/>
+		<title>AI Improv</title>
+		<link rel="stylesheet" href="style.css" />
+	</head>
+	<body>
+		<div class="container">
+			<div class="main-content">
+				<!-- Swapped character and chat areas for better mobile layout -->
+				<div class="character-area">
+					<img id="character-image" src="" alt="Character" />
+					<div id="status">Connecting...</div>
+				</div>
+				<div class="chat-area">
+					<div id="chat-history"></div>
+				</div>
+			</div>
+			<div class="controls">
+				<div class="top-controls">
+					<select id="character-select"></select>
+					<div class="recording-toggle">
+						<label for="toggle-record">Toggle Record</label>
+						<input type="checkbox" id="toggle-record" />
+					</div>
+				</div>
+				<button id="ptt-button">Hold to Talk</button>
+				<div class="system-prompt-area">
+					<label for="system-prompt">Instructions for Character:</label>
+					<textarea
+						id="system-prompt"
+						rows="3"
+						placeholder="e.g., Always be cheerful and end with a question."
+					></textarea>
+					<button id="save-prompt-button">Save Instructions</button>
+				</div>
+			</div>
+		</div>
+		<script type="module" src="main.js"></script>
+	</body>
+</html>

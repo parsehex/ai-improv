@@ -3,7 +3,10 @@ config.py
 data/
 .venv/
 venv/
+node_modules/
+dist/
 .env
 *.srt
 *.wav
 *.mp3
+*.js
