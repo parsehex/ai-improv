@@ -34,6 +34,12 @@ const TOGGLE_RECORD_KEY = 'aiImprov-toggleRecord';
 let currentAssistantMessageEl: HTMLDivElement | null = null;
 let currentResponseText = '';
 let lastResponseEmotion: string | null = null;
+let processedTextForTTS = '';
+
+// State for sentence-by-sentence audio playback
+let audioQueue: string[] = [];
+let isPlayingAudio = false;
+let audioStreamHasEnded = false;
 
 // --- WebSocket Connection ---
 function connect() {
@@ -60,9 +66,11 @@ function handleMessage(type: string, payload: any) {
 			);
 			break;
 		case 'STATUS_UPDATE':
-			updateStatus(payload.status);
+			if (!isPlayingAudio) {
+				updateStatus(payload.status);
+			}
 			break;
-		case 'CHAT_MESSAGE': // Now only for user messages
+		case 'CHAT_MESSAGE':
 			addChatMessage(payload.role, payload.content);
 			break;
 		case 'AI_RESPONSE_START':
@@ -73,6 +81,10 @@ function handleMessage(type: string, payload: any) {
 			currentAssistantMessageEl = msgDiv;
 			currentResponseText = '';
 			lastResponseEmotion = null;
+			processedTextForTTS = ''; // Reset TTS tracker
+			audioQueue = [];
+			isPlayingAudio = false;
+			audioStreamHasEnded = false;
 			updateCharacterImage('talking');
 			break;
 		case 'AI_RESPONSE_CHUNK':
@@ -82,9 +94,10 @@ function handleMessage(type: string, payload: any) {
 				const partialData = parse(currentResponseText);
 				if (partialData.text) {
 					currentAssistantMessageEl.textContent = partialData.text;
+					// Process the newly received text for sentences
+					processNewTextForTTS(partialData.text);
 				}
 			} catch (e) {
-				// Fallback for malformed JSON, show raw text
 				currentAssistantMessageEl.textContent = currentResponseText;
 			}
 			chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
@@ -96,15 +109,21 @@ function handleMessage(type: string, payload: any) {
 					if (finalData.emotion) {
 						lastResponseEmotion = finalData.emotion;
 					}
+					// Process any remaining text after the stream ends
+					processNewTextForTTS(finalData.text, true);
 				} catch (e) {
 					console.error("Couldn't parse final JSON for emotion", e);
 				}
 			}
 			currentAssistantMessageEl = null;
-			currentResponseText = '';
 			break;
 		case 'PLAY_AUDIO':
-			playAudio(payload.audio);
+			audioQueue.push(payload.audio);
+			playNextInQueue();
+			break;
+		case 'AUDIO_STREAM_END':
+			audioStreamHasEnded = true;
+			playNextInQueue();
 			break;
 		case 'CHARACTER_SWITCHED':
 			populateCharacterSelector(payload.key, true);
@@ -119,6 +138,35 @@ function handleMessage(type: string, payload: any) {
 function sendMessage(type: string, payload: object) {
 	if (ws.readyState === WebSocket.OPEN) {
 		ws.send(JSON.stringify({ type, payload }));
+	}
+}
+
+function processNewTextForTTS(fullText: string, isFinal = false) {
+	// Find the portion of the text that we haven't processed yet
+	let newText = fullText.substring(processedTextForTTS.length);
+
+	const sentenceEndRegex = /([^.!?]+[.!?])\s*/g;
+	let match;
+
+	while ((match = sentenceEndRegex.exec(newText)) !== null) {
+		const sentence = match[1].trim();
+		if (sentence) {
+			console.log(`Client detected sentence: "${sentence}"`);
+			sendMessage('REQUEST_TTS_FOR_SENTENCE', { sentence });
+			// Update the tracker to include the sentence we just processed
+			processedTextForTTS += match[0];
+		}
+	}
+
+	// If this is the final chunk, send any remaining text as a sentence
+	if (isFinal) {
+		newText = fullText.substring(processedTextForTTS.length);
+		const remainingSentence = newText.trim();
+		if (remainingSentence) {
+			console.log(`Client detected final sentence: "${remainingSentence}"`);
+			sendMessage('REQUEST_TTS_FOR_SENTENCE', { sentence: remainingSentence });
+			processedTextForTTS = fullText;
+		}
 	}
 }
 
@@ -159,7 +207,6 @@ function populateCharacterSelector(selectedKey: string, isUpdate = false) {
 function updateCharacterImage(emotion: string) {
 	if (!currentCharacterKey) return;
 	const imagePath = characters[currentCharacterKey].images[emotion];
-	// The server serves the frontend, so we can construct a relative path to data
 	characterImage.src = `${imagePath}`;
 }
 
@@ -180,12 +227,8 @@ async function startRecording() {
 				updateStatus('Idle');
 				return;
 			}
-			// Use the recorder's mimeType to know the true format.
 			const mimeType = mediaRecorder.mimeType;
 			const audioBlob = new Blob(audioChunks, { type: mimeType });
-
-			// Derive a file extension from the mimeType.
-			// e.g., "audio/webm;codecs=opus" -> "webm"
 			const extension = mimeType.split(';')[0].split('/')[1];
 			const fileName = `audio.${extension}`;
 			console.log(`Recorded audio as ${fileName} (MIME: ${mimeType})`);
@@ -193,7 +236,6 @@ async function startRecording() {
 			const reader = new FileReader();
 			reader.onloadend = () => {
 				const base64 = (reader.result as string).split(',')[1];
-				// Send the fileName to the server so it can be passed to the AI API.
 				sendMessage('PROCESS_AUDIO', { audio: base64, fileName: fileName });
 			};
 			reader.readAsDataURL(audioBlob);
@@ -214,18 +256,40 @@ function stopRecording() {
 	}
 }
 
-function playAudio(audioBase64: string) {
-	const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
-	audio.play();
-	audio.onended = () => {
-		updateStatus('Idle');
-		// After speaking, set the character's final emotion image
-		if (lastResponseEmotion) {
-			updateCharacterImage(lastResponseEmotion);
-		} else {
-			updateCharacterImage('neutral'); // Fallback
+function playNextInQueue() {
+	if (isPlayingAudio || audioQueue.length === 0) {
+		if (!isPlayingAudio && audioStreamHasEnded && audioQueue.length === 0) {
+			handleAllAudioFinished();
 		}
+		return;
+	}
+
+	isPlayingAudio = true;
+	updateStatus('Speaking...');
+
+	const audioBase64 = audioQueue.shift()!;
+	const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
+	audio.play().catch((e) => {
+		console.error('Audio playback failed:', e);
+		isPlayingAudio = false;
+		playNextInQueue();
+	});
+
+	audio.onended = () => {
+		isPlayingAudio = false;
+		playNextInQueue();
 	};
+}
+
+function handleAllAudioFinished() {
+	console.log('All queued audio has finished playing.');
+	updateStatus('Idle');
+	if (lastResponseEmotion) {
+		updateCharacterImage(lastResponseEmotion);
+	} else {
+		updateCharacterImage('neutral');
+	}
+	audioStreamHasEnded = false;
 }
 
 // --- Event Listeners ---

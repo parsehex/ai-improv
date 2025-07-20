@@ -84,8 +84,7 @@ function getSystemPrompt(): string {
 	return prompt;
 }
 
-// --- WebSocket Logic (no changes) ---
-// This function will be called later to attach the logic to the correct server
+// --- WebSocket Logic ---
 function setupWebSocketLogic(wss: WebSocketServer) {
 	wss.on('connection', (ws) => {
 		console.log('Client connected');
@@ -105,8 +104,33 @@ function setupWebSocketLogic(wss: WebSocketServer) {
 
 			switch (type) {
 				case 'PROCESS_AUDIO':
-					// Pass the fileName from the payload to the handler
 					handleAudioProcessing(wss, payload.audio, payload.fileName);
+					break;
+				case 'REQUEST_TTS_FOR_SENTENCE':
+					if (state.currentCharacterKey && payload.sentence) {
+						const voice =
+							state.characters[state.currentCharacterKey]?.voice || 'af_heart';
+						try {
+							const ttsResponse = await axios.post(
+								`${AI_API_URL}/tts`,
+								{ text: payload.sentence, voice },
+								{ responseType: 'arraybuffer' }
+							);
+							const audioData = Buffer.from(
+								ttsResponse.data,
+								'binary'
+							).toString('base64');
+							broadcast(wss, {
+								type: 'PLAY_AUDIO',
+								payload: { audio: audioData },
+							});
+						} catch (ttsError: any) {
+							console.error(
+								`Error during TTS for sentence "${payload.sentence}":`,
+								ttsError.message
+							);
+						}
+					}
 					break;
 				case 'SWITCH_CHARACTER':
 					state.currentCharacterKey = payload.key;
@@ -150,7 +174,7 @@ function broadcast(wss: WebSocketServer, message: object) {
 	});
 }
 
-// --- Core Interaction Logic (pass wss to broadcast) ---
+// --- Core Interaction Logic ---
 async function handleAudioProcessing(
 	wss: WebSocketServer,
 	audioBase64: string,
@@ -192,7 +216,7 @@ async function handleAudioProcessing(
 				prompt: userText,
 				system_prompt: getSystemPrompt(),
 			},
-			{ responseType: 'stream' } // Critical for streaming
+			{ responseType: 'stream' }
 		);
 
 		let fullResponse = '';
@@ -211,6 +235,11 @@ async function handleAudioProcessing(
 
 		stream.on('end', async () => {
 			console.log('LLM stream ended.');
+			// Signal to the client that the text stream is done, so it can process any remaining text
+			// and that the audio stream will also be ending soon.
+			broadcast(wss, { type: 'AI_RESPONSE_END' });
+			broadcast(wss, { type: 'AUDIO_STREAM_END' });
+
 			let finalDataObject: { text: string; emotion: string };
 			try {
 				finalDataObject = JSON.parse(fullResponse);
@@ -227,44 +256,10 @@ async function handleAudioProcessing(
 				};
 			}
 
-			broadcast(wss, { type: 'AI_RESPONSE_END' });
 			state.chatHistory.push({
 				role: 'assistant',
 				content: finalDataObject.text,
 			});
-
-			broadcast(wss, {
-				type: 'STATUS_UPDATE',
-				payload: { status: 'Speaking...' },
-			});
-
-			// 3. Text-to-Speech (after stream is complete)
-			try {
-				const ttsResponse = await axios.post(
-					`${AI_API_URL}/tts`,
-					{
-						text: finalDataObject.text,
-						voice:
-							state.characters[state.currentCharacterKey!]?.voice || 'af_heart',
-					},
-					{ responseType: 'arraybuffer' }
-				);
-				const audioData = Buffer.from(ttsResponse.data, 'binary').toString(
-					'base64'
-				);
-				broadcast(wss, { type: 'PLAY_AUDIO', payload: { audio: audioData } });
-			} catch (ttsError: any) {
-				console.error('Error during TTS call:', ttsError.message);
-				broadcast(wss, { type: 'STATUS_UPDATE', payload: { status: 'Error' } });
-				setTimeout(
-					() =>
-						broadcast(wss, {
-							type: 'STATUS_UPDATE',
-							payload: { status: 'Idle' },
-						}),
-					2000
-				);
-			}
 		});
 
 		stream.on('error', (err) => {
