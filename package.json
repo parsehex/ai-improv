@@ -6,7 +6,7 @@
     "build": "tsc",
     "start": "node .",
     "dev": "tsc-watch --onSuccess \"node .\"",
-    "frontend": "tsc ./frontend/main.ts --target es2020",
+    "frontend": "vite build frontend/",
     "generate-cert": "openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ./app_server/certs/key.pem -out ./app_server/certs/cert.pem"
   },
   "dependencies": {
